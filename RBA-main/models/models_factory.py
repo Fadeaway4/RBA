@@ -6,18 +6,13 @@ And https://github.com/weiaicunzai/pytorch-cifar100 (better performance) <- Refe
 from torch import nn
 import numpy as np
 import torch
-from torchvision.models import resnet18
+from torchvision.models import resnet18,resnet34
 from transformers import ViTModel, ViTFeatureExtractor
 from resnet import ResNet, BasicBlock
 from vit import ViT
 from resnet import resnet50 as ResNet50
 
-def ResNet18(num_classes=None):
-    return ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes)
 
-
-def resnet34(num_classes=100):
-    return ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_classes)
 
 
 

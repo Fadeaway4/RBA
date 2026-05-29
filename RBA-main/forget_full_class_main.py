@@ -188,7 +188,7 @@ if args.gpu:
     unlearning_teacher = unlearning_teacher.cuda()
 
 # For celebritiy faces
-root = "./data"
+root = "/home/libingyan/备用/Libingyan/OUR/OUR-main/data"
 # Scale for ViT (faster training, better performance)
 # img_size = 224 if args.net == "ViT" else 32
 img_size = 32

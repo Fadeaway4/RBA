@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-优化版训练脚本，支持从上次中断处继续训练
+Optimized training script with resume-from-checkpoint support
 """
 
 import logging
@@ -26,7 +26,6 @@ from utils.overall_utils import eval_training
 
 
 class CheckpointManager:
-    """检查点管理器，负责保存和加载训练状态（兼容单/多GPU）"""
 
     def __init__(self, save_dir, model_name, net):
         self.save_dir = Path(save_dir)
@@ -40,9 +39,9 @@ class CheckpointManager:
 
     def save_checkpoint(self, epoch, optimizer, scheduler, warmup_scheduler,
                         best_acc, is_best=False, is_interrupt=False):
-        """保存训练检查点"""
+
         if isinstance(self.net, nn.DataParallel):
-            model_to_save = self.net.module  # 去掉 DataParallel
+            model_to_save = self.net.module  # Remove DataParallel wrapper
         else:
             model_to_save = self.net
 
@@ -64,12 +63,12 @@ class CheckpointManager:
             torch.save(model_to_save.state_dict(), self.best_model_path)
 
         if is_interrupt:
-            logging.info(f"[中断保存] 检查点已保存到: {self.checkpoint_path}")
+            logging.info(f"Checkpoint saved: {self.checkpoint_path}")
         else:
-            logging.info(f"[检查点] epoch {epoch} 已保存到: {self.checkpoint_path}")
+            logging.info(f"[Checkpoint] Epoch {epoch} saved: {self.checkpoint_path}")
 
     def load_checkpoint(self, optimizer, scheduler, warmup_scheduler):
-        """加载训练检查点，兼容 DataParallel / 单 GPU"""
+
         if not self.checkpoint_path.exists():
             return 1, 0.0, False
 
@@ -79,50 +78,58 @@ class CheckpointManager:
             state_dict = checkpoint['model_state_dict']
             new_state_dict = {}
 
-            # 自动处理 module 前缀（单/多GPU 都兼容）
             for k, v in state_dict.items():
                 k_new = k
                 if k.startswith('module.') and not isinstance(self.net, nn.DataParallel):
-                    k_new = k[len('module.'):]  # 去掉 module
+                    k_new = k[len('module.'):]
                 elif not k.startswith('module.') and isinstance(self.net, nn.DataParallel):
-                    k_new = 'module.' + k  # 补上 module
+                    k_new = 'module.' + k
                 new_state_dict[k_new] = v
 
             self.net.load_state_dict(new_state_dict)
 
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
             if 'scheduler_state_dict' in checkpoint:
                 scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
             if hasattr(warmup_scheduler, 'step_count'):
                 warmup_scheduler.step_count = checkpoint.get('warmup_scheduler_step', 0)
 
             start_epoch = checkpoint['epoch'] + 1
             best_acc = checkpoint['best_acc']
 
-            logging.info(f"从检查点恢复训练: epoch {checkpoint['epoch']}, 最佳准确率: {best_acc:.4f}")
-            logging.info(f"检查点时间: {checkpoint.get('timestamp', '未知')}")
+            logging.info(
+                f"Resumed training from epoch {checkpoint['epoch']}, "
+                f"best Accuracy: {best_acc:.4f}"
+            )
+            logging.info(
+                f"Checkpoint timestamp: {checkpoint.get('timestamp', 'Unknown')}"
+            )
 
             return start_epoch, best_acc, True
 
         except Exception as e:
-            logging.warning(f"加载检查点失败: {e}")
+            logging.warning(f"Failed to load checkpoint: {e}")
             return 1, 0.0, False
 
+
 def setup_logging(output_path):
-    """设置日志记录"""
+    """Setup logging"""
     logger = logging.getLogger("TrainingLogger")
     logger.setLevel(logging.INFO)
 
-    # 避免重复添加handler
+    # Avoid duplicate handlers
     if not logger.handlers:
-        # 文件handler
+
+        # File handler
         file_handler = logging.FileHandler(output_path / "training.log")
         file_handler.setFormatter(logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s'
         ))
         logger.addHandler(file_handler)
 
-        # 控制台handler
+        # Console handler
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s'
@@ -133,11 +140,11 @@ def setup_logging(output_path):
 
 
 def create_data_loaders(args):
-    """创建数据加载器（支持剔除OOD类别）"""
+    """Create data loaders (supports removing OOD classes)"""
     from torch.utils.data import Subset
 
     # =========================
-    # 数据增强
+    # Data augmentation
     # =========================
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -157,30 +164,37 @@ def create_data_loaders(args):
     ])
 
     # =========================
-    # 加载数据
+    # Load dataset
     # =========================
-    root = "./data"
+    root = "/home/libingyan/备用/Libingyan/OUR/OUR-main/data"
+
     trainset = getattr(datasets, args.dataset)(
-        root=root, download=True, train=True, unlearning=False, img_size=32
+        root=root, download=True, train=True,
+        unlearning=False, img_size=32
     )
+
     testset = getattr(datasets, args.dataset)(
-        root=root, download=True, train=False, unlearning=False, img_size=32
+        root=root, download=True, train=False,
+        unlearning=False, img_size=32
     )
 
     # =========================
-    # 🔥 OOD 剔除（核心！！）
+    # 🔥 Remove OOD classes
     # =========================
     def remove_ood_classes(dataset, ood_classes):
         indices = []
+
         for i in range(len(dataset)):
             _, _, label = dataset[i]
             if label not in ood_classes:
                 indices.append(i)
+
         return Subset(dataset, indices)
 
-    # 👉 这里你可以改
-   #ood_classes = [15, 16, 17, 18, 19]
+    # 👉 Modify here if needed
+    # ood_classes = [15, 16, 17, 18, 19]
     ood_classes = [0, 8, 9]
+
     print("====================================")
     print("OOD classes (NOT used in training):", ood_classes)
     print("====================================")
@@ -189,14 +203,15 @@ def create_data_loaders(args):
     testset = remove_ood_classes(testset, ood_classes)
 
     # =========================
-    # sanity check（强烈建议保留）
+    # Sanity check
     # =========================
     labels_check = set()
+
     for i in range(min(2000, len(trainset))):
         _, _, y = trainset[i]
         labels_check.add(int(y))
 
-    print("训练集中实际类别:", sorted(labels_check))
+    print("Actual classes in training set:", sorted(labels_check))
 
     # =========================
     # DataLoader
@@ -223,24 +238,26 @@ def create_data_loaders(args):
 
 
 def create_model_and_optimizer(args, num_classes):
-    """创建模型和优化器"""
-    # 网络
+    """Create model and optimizer"""
+
+    # Network
     net = getattr(models_factory, args.net)(num_classes=num_classes)
 
-    # 多GPU支持
+    # Multi-GPU support
     if args.gpu and torch.cuda.device_count() > 1:
-        print(f"使用 {torch.cuda.device_count()} 个GPU")
+        print(f"Using {torch.cuda.device_count()} GPUs")
         net = nn.DataParallel(net)
 
     if args.gpu:
         net = net.cuda()
 
-    # 损失函数
+    # Loss function
     loss_function = nn.CrossEntropyLoss()
+
     if args.gpu:
         loss_function = loss_function.cuda()
 
-    # 优化器
+    # Optimizer
     if args.net == "ViT":
         optimizer = optim.AdamW(
             net.parameters(),
@@ -258,50 +275,68 @@ def create_model_and_optimizer(args, num_classes):
     return net, loss_function, optimizer
 
 
-def train_epoch(net, trainloader, loss_function, optimizer, epoch, warmup_scheduler, args):
-    """训练一个epoch"""
+def train_epoch(net, trainloader, loss_function, optimizer,
+                epoch, warmup_scheduler, args):
+    """Train one epoch"""
+
     net.train()
+
     running_loss = 0.0
     correct = 0
     total = 0
+
     start_time = time.time()
 
     for batch_idx, (images, _, labels) in enumerate(trainloader):
+
         if args.gpu:
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
+
         outputs = net(images)
         loss = loss_function(outputs, labels)
+
         loss.backward()
 
-        # 梯度裁剪
+        # Gradient clipping
         if args.grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(net.parameters(), args.grad_clip)
+            torch.nn.utils.clip_grad_norm_(
+                net.parameters(),
+                args.grad_clip
+            )
 
         optimizer.step()
 
-        # 更新warmup调度器
+        # Update warmup scheduler
         if epoch <= args.warmup_epochs:
             warmup_scheduler.step()
 
-        # 统计
+        # Statistics
         running_loss += loss.item()
+
         _, predicted = outputs.max(1)
+
         total += labels.size(0)
         correct += predicted.eq(labels).sum().item()
 
-        # 进度显示
+        # Progress logging
         if batch_idx % args.log_interval == 0:
+
             avg_loss = running_loss / (batch_idx + 1)
             acc = 100. * correct / total
             current_lr = optimizer.param_groups[0]['lr']
 
-            print(f'Epoch: {epoch} [{batch_idx}/{len(trainloader)}] '
-                  f'Loss: {avg_loss:.4f} | Acc: {acc:.2f}% | LR: {current_lr:.6f}')
+            print(
+                f'Epoch: {epoch} [{batch_idx}/{len(trainloader)}] '
+                f'Loss: {avg_loss:.4f} | '
+                f'Acc: {acc:.2f}% | '
+                f'LR: {current_lr:.6f}'
+            )
 
     epoch_time = time.time() - start_time
+
     avg_loss = running_loss / len(trainloader)
     epoch_acc = 100. * correct / total
 
@@ -309,85 +344,169 @@ def train_epoch(net, trainloader, loss_function, optimizer, epoch, warmup_schedu
 
 
 def main():
-    """主函数"""
+    """Main function"""
+
     # ------------------------
-    # 参数解析
+    # Argument parser
     # ------------------------
-    parser = argparse.ArgumentParser(description="支持断点续训的训练脚本")
+    parser = argparse.ArgumentParser(
+        description="Training script with resume support"
+    )
 
-    # 模型和数据参数
-    parser.add_argument("-net", type=str, default='ViT', help="网络类型")
-    parser.add_argument("-dataset", type=str, default='Cifar20', help="数据集")
-    parser.add_argument("-classes", type=int, default=20, help="类别数")
+    # Model and dataset parameters
+    parser.add_argument(
+        "-net", type=str, default='ViT',
+        help="Network type"
+    )
 
-    # 训练参数
-    parser.add_argument("-epochs", type=int, default=3000, help="总训练轮数")
-    parser.add_argument("-batch_size", "-b", type=int, default=256, help="批大小")
-    parser.add_argument("-learning_rate", "-lr", type=float, default=5e-4, help="学习率")
-    parser.add_argument("-weight_decay", type=float, default=1e-4, help="权重衰减")
-    parser.add_argument("-momentum", type=float, default=0.9, help="动量")
-    parser.add_argument("-grad_clip", type=float, default=5.0, help="梯度裁剪")
+    parser.add_argument(
+        "-dataset", type=str, default='Cifar20',
+        help="Dataset name"
+    )
 
-    # 调度器参数
-    parser.add_argument("-warmup_epochs", type=int, default=5, help="warmup轮数")
-    parser.add_argument("-min_lr", type=float, default=1e-6, help="最小学习率")
+    parser.add_argument(
+        "-classes", type=int, default=20,
+        help="Number of classes"
+    )
 
-    # 系统参数
-    parser.add_argument("-gpu", type=bool, default=True, help="使用GPU")
-    parser.add_argument("-seed", type=int, default=0, help="随机种子")
-    parser.add_argument("-resume", action="store_true", help="从检查点恢复训练")
-    parser.add_argument("-no_resume", action="store_true", help="强制从头开始训练")
-    parser.add_argument("-log_interval", type=int, default=50, help="日志间隔")
-    parser.add_argument("-save_interval", type=int, default=10, help="保存间隔")
+    # Training parameters
+    parser.add_argument(
+        "-epochs", type=int, default=3000,
+        help="Total training epochs"
+    )
+
+    parser.add_argument(
+        "-batch_size", "-b", type=int, default=256,
+        help="Batch size"
+    )
+
+    parser.add_argument(
+        "-learning_rate", "-lr", type=float, default=5e-4,
+        help="Learning rate"
+    )
+
+    parser.add_argument(
+        "-weight_decay", type=float, default=1e-4,
+        help="Weight decay"
+    )
+
+    parser.add_argument(
+        "-momentum", type=float, default=0.9,
+        help="Momentum"
+    )
+
+    parser.add_argument(
+        "-grad_clip", type=float, default=5.0,
+        help="Gradient clipping"
+    )
+
+    # Scheduler parameters
+    parser.add_argument(
+        "-warmup_epochs", type=int, default=5,
+        help="Number of warmup epochs"
+    )
+
+    parser.add_argument(
+        "-min_lr", type=float, default=1e-6,
+        help="Minimum learning rate"
+    )
+
+    # System parameters
+    parser.add_argument(
+        "-gpu", type=bool, default=True,
+        help="Use GPU"
+    )
+
+    parser.add_argument(
+        "-seed", type=int, default=0,
+        help="Random seed"
+    )
+
+    parser.add_argument(
+        "-resume", action="store_true",
+        help="Resume training from checkpoint"
+    )
+
+    parser.add_argument(
+        "-no_resume", action="store_true",
+        help="Force training from scratch"
+    )
+
+    parser.add_argument(
+        "-log_interval", type=int, default=50,
+        help="Logging interval"
+    )
+
+    parser.add_argument(
+        "-save_interval", type=int, default=10,
+        help="Checkpoint save interval"
+    )
 
     args = parser.parse_args()
 
-    # 保存参数到全局变量，用于检查点保存
+    # Save arguments globally for checkpoint saving
     global args_dict
     args_dict = vars(args)
 
-    # 设置随机种子
+    # Set random seed
     torch.manual_seed(args.seed)
+
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
     # ------------------------
-    # 输出路径
+    # Output path
     # ------------------------
-    output_path = Path(config.CHECKPOINT_PATH) / "pretrain" / f"{args.net}-{args.dataset}-{args.classes}"
+    output_path = (
+        Path(config.CHECKPOINT_PATH)
+        / "pretrain"
+        / f"{args.net}-{args.dataset}-{args.classes}"
+    )
+
     output_path.mkdir(parents=True, exist_ok=True)
 
     # ------------------------
-    # 设置日志
+    # Setup logging
     # ------------------------
     logger = setup_logging(output_path)
 
-    # 记录参数
-    logger.info("训练参数:")
+    # Log arguments
+    logger.info("Training arguments:")
+
     for key, value in args_dict.items():
         logger.info(f"  {key}: {value}")
 
     # ------------------------
-    # 创建数据加载器
+    # Create data loaders
     # ------------------------
-    logger.info("创建数据加载器...")
+    logger.info("Creating data loaders...")
+
     trainloader, testloader, dataset_size = create_data_loaders(args)
-    logger.info(f"训练集大小: {dataset_size}")
-    logger.info(f"测试集大小: {len(testloader.dataset)}")
+
+    logger.info(f"Training set size: {dataset_size}")
+    logger.info(f"Test set size: {len(testloader.dataset)}")
 
     # ------------------------
-    # 创建模型和优化器
+    # Create model and optimizer
     # ------------------------
-    logger.info("创建模型和优化器...")
-    net, loss_function, optimizer = create_model_and_optimizer(args, args.classes)
+    logger.info("Creating model and optimizer...")
+
+    net, loss_function, optimizer = create_model_and_optimizer(
+        args,
+        args.classes
+    )
 
     # ------------------------
-    # 创建调度器
+    # Create schedulers
     # ------------------------
     iter_per_epoch = len(trainloader)
-    warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch * args.warmup_epochs)
 
-    # Cosine退火调度器
+    warmup_scheduler = WarmUpLR(
+        optimizer,
+        iter_per_epoch * args.warmup_epochs
+    )
+
+    # Cosine annealing scheduler
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
         T_max=args.epochs,
@@ -395,92 +514,145 @@ def main():
     )
 
     # ------------------------
-    # 检查点管理器
+    # Checkpoint manager
     # ------------------------
-    checkpoint_manager = CheckpointManager(output_path, f"{args.net}-{args.dataset}", net)
+    checkpoint_manager = CheckpointManager(
+        output_path,
+        f"{args.net}-{args.dataset}",
+        net
+    )
 
     # ------------------------
-    # 恢复训练或从头开始
+    # Resume training or start from scratch
     # ------------------------
     if args.no_resume:
+
         start_epoch = 1
         best_acc = 0.0
-        logger.info("强制从头开始训练")
+
+        logger.info("Force training from scratch")
+
     else:
+
         start_epoch, best_acc, loaded = checkpoint_manager.load_checkpoint(
-            optimizer, scheduler, warmup_scheduler
+            optimizer,
+            scheduler,
+            warmup_scheduler
         )
+
         if not loaded and not args.resume:
+
             start_epoch = 1
             best_acc = 0.0
-            logger.info("从头开始训练")
+
+            logger.info("Training from scratch")
+
         elif loaded:
-            logger.info(f"从epoch {start_epoch}恢复训练，最佳准确率: {best_acc:.4f}")
 
-    # ------------------------
-    # 训练循环
-    # ------------------------
-    logger.info("开始训练...")
-
-    try:
-        for epoch in range(start_epoch, args.epochs + 1):
-            # 训练一个epoch
-            train_loss, train_acc, epoch_time = train_epoch(
-                net, trainloader, loss_function, optimizer,
-                epoch, warmup_scheduler, args
+            logger.info(
+                f"Resumed training from epoch {start_epoch}, "
+                f"best accuracy: {best_acc:.4f}"
             )
 
-            # 更新学习率调度器（warmup阶段之后）
+    # ------------------------
+    # Training loop
+    # ------------------------
+    logger.info("Start training...")
+
+    try:
+
+        for epoch in range(start_epoch, args.epochs + 1):
+
+            # Train one epoch
+            train_loss, train_acc, epoch_time = train_epoch(
+                net,
+                trainloader,
+                loss_function,
+                optimizer,
+                epoch,
+                warmup_scheduler,
+                args
+            )
+
+            # Update learning rate scheduler
             if epoch > args.warmup_epochs:
                 scheduler.step()
 
-            # 评估
+            # Evaluation
             test_acc = eval_training(epoch, net, testloader)
+
             current_lr = optimizer.param_groups[0]['lr']
 
-            # 记录结果
-            logger.info(f"Epoch {epoch}/{args.epochs} - "
-                        f"Train Loss: {train_loss:.4f}, "
-                        f"Train Acc: {train_acc:.2f}%, "
-                        f"Test Acc: {test_acc:.4f}, "
-                        f"LR: {current_lr:.6f}, "
-                        f"Time: {epoch_time:.2f}s")
+            # Log results
+            logger.info(
+                f"Epoch {epoch}/{args.epochs} - "
+                f"Train Loss: {train_loss:.4f}, "
+                f"Train Acc: {train_acc:.2f}%, "
+                f"Test Acc: {test_acc:.4f}, "
+                f"LR: {current_lr:.6f}, "
+                f"Time: {epoch_time:.2f}s"
+            )
 
-            # 检查是否是最佳模型
+            # Check best model
             is_best = test_acc > best_acc
+
             if is_best:
                 best_acc = test_acc
-                logger.info(f"新的最佳准确率: {best_acc:.4f}")
+                logger.info(f"New best accuracy: {best_acc:.4f}")
 
-            # 定期保存检查点
-            if epoch % args.save_interval == 0 or epoch == args.epochs or is_best:
+            # Save checkpoint periodically
+            if (
+                epoch % args.save_interval == 0
+                or epoch == args.epochs
+                or is_best
+            ):
                 checkpoint_manager.save_checkpoint(
-                    epoch, optimizer, scheduler, warmup_scheduler,
-                    best_acc, is_best=is_best
+                    epoch,
+                    optimizer,
+                    scheduler,
+                    warmup_scheduler,
+                    best_acc,
+                    is_best=is_best
                 )
 
     except KeyboardInterrupt:
-        logger.info("训练被中断，保存当前状态...")
+
+        logger.info("Training interrupted, saving current state...")
+
         checkpoint_manager.save_checkpoint(
             epoch - 1 if 'epoch' in locals() else start_epoch - 1,
-            optimizer, scheduler, warmup_scheduler,
-            best_acc, is_interrupt=True
+            optimizer,
+            scheduler,
+            warmup_scheduler,
+            best_acc,
+            is_interrupt=True
         )
-        logger.info("已保存中断检查点")
+
+        logger.info("Interrupted checkpoint saved")
 
     except Exception as e:
-        logger.error(f"训练过程中出现错误: {e}")
-        logger.error("尝试保存当前状态...")
+
+        logger.error(f"Error during training: {e}")
+        logger.error("Attempting to save current state...")
+
         checkpoint_manager.save_checkpoint(
             epoch - 1 if 'epoch' in locals() else start_epoch - 1,
-            optimizer, scheduler, warmup_scheduler,
-            best_acc, is_interrupt=True
+            optimizer,
+            scheduler,
+            warmup_scheduler,
+            best_acc,
+            is_interrupt=True
         )
+
         raise
 
     finally:
-        logger.info(f"训练完成，最佳测试准确率: {best_acc:.4f}")
-        logger.info(f"模型保存在: {output_path}")
+
+        logger.info(
+            f"Training completed, best test accuracy: {best_acc:.4f}"
+        )
+
+        logger.info(f"Model saved in: {output_path}")
 
 
 if __name__ == "__main__":

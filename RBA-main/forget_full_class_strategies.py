@@ -16,7 +16,7 @@ class DistillKL(nn.Module):
         self.T = T
 
     def forward(self, y_s, y_t):
-        # y_s: student 输出, y_t: teacher 输出
+        
         p_s = F.log_softmax(y_s / self.T, dim=1)
         p_t = F.softmax(y_t / self.T, dim=1)
         loss = F.kl_div(p_s, p_t, reduction='batchmean') * (self.T ** 2)
@@ -78,7 +78,7 @@ def standard_mia(model, train_loader, test_loader, device):
     ])
 
     scores = np.concatenate([
-        -train_losses,   # loss越小越像member → 取负
+        -train_losses,   
         -test_losses
     ])
 
@@ -630,7 +630,7 @@ def scrub(
         "| mia_auc =", mia_auc
     )
 
-    # 保存
+    
     torch.save(model.state_dict(), weights_path)
 
     time_elapsed = time.time() - start_time
@@ -680,7 +680,7 @@ def unrolling(
 
     if model_name.startswith("ViT"):
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    else:  # ResNet 系列
+    else:  
         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 
 
@@ -708,9 +708,7 @@ def unrolling(
             loss.backward()
             optimizer.step()
 
-    # =============================
-    # ⭐ 最终评估
-    # =============================
+
     d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
         model,
         unlearning_teacher,
@@ -1053,11 +1051,7 @@ def l_codec_unlearn(
         model_name=None,
         **kwargs,
 ):
-    """
-    L-CODEC (Linear Conditional Dependence Unlearning)
-    基于条件独立性检测 (FOCI) 的遗忘方法
-    输出格式统一为: (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
-    """
+
     import time
     import torch
     import torch.nn as nn
@@ -1077,9 +1071,7 @@ def l_codec_unlearn(
             model_name = 'vit'
         else:
             model_name = 'unknown'
-    # -----------------------------
-    # Step 1: 特征相关性分析（近似实现）
-    # -----------------------------
+
     print("Step 1: Analyzing Conditional Dependence using L-CODEC logic...")
     target_layer = None
     for name, module in model.named_modules():
@@ -1094,17 +1086,15 @@ def l_codec_unlearn(
             model.zero_grad()
             loss.backward()
 
-            # L-CODEC 核心：对高依赖参数进行漂移
+            
             with torch.no_grad():
                 grad_mask = (target_layer.weight.grad.abs() > threshold * target_layer.weight.grad.abs().max())
-                target_layer.weight.data[grad_mask] *= -0.1  # 抑制高相关权重
+                target_layer.weight.data[grad_mask] *= -0.1  
 
-            if i > 5:  # 采样计算，加快速度
+            if i > 5:  
                 break
 
-    # -----------------------------
-    # Step 2: Repair (可选)
-    # -----------------------------
+
     if repair_epochs > 0:
         print(f"Step 2: Repairing model for {repair_epochs} epochs...")
         optimizer = optim.Adam(model.parameters(), lr=0.0001)
@@ -1117,12 +1107,10 @@ def l_codec_unlearn(
                 loss = criterion(output, target)
                 loss.backward()
                 optimizer.step()
-                if i > 100:  # 采样
+                if i > 100:  
                     break
 
-    # -----------------------------
-    # Step 3: 最终评估
-    # -----------------------------
+
     d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
         model,
         unlearning_teacher,
@@ -1139,9 +1127,7 @@ def l_codec_unlearn(
     print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r,
           "| mia_acc =", mia_acc, "| mia_auc =", mia_auc)
 
-    # -----------------------------
-    # 保存模型
-    # -----------------------------
+
     if weights_path:
         torch.save(model.state_dict(), weights_path)
 

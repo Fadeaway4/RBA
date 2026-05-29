@@ -81,14 +81,14 @@ else:
 
 logging.basicConfig(
     filename=log_file,
-    level=logging.INFO,  # 记录 INFO 级别以上的日志
+    level=logging.INFO,  
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
 def log_message(message):
-    print(message)  # 终端打印日志
-    logging.info(message)  # 记录到文件
+    print(message)  
+    logging.info(message)  
 
 
 MILESTONES = (

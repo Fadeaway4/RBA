@@ -1,86 +1,66 @@
-# Orthogonal Unlearning and Replay
+# Relearning Behavior Alignment (RBA) Framework
 
-Welcome to the official repository for the paper **"Reminiscence Attack on Residuals: Exploiting Approximate Machine Unlearning for Privacy"**. This research explores a critical vulnerability in approximate unlearning algorithms and introduces the **Reminiscence Attack (ReA)**, which specifically targets the membership privacy of data that has been “unlearned” (removed) from a model.
-
-In this repository, you will find:
-
-1. **Reminiscence Attack (ReA)**  
-   A method to exploit residual information in models that have performed approximate machine unlearning, potentially recovering membership information of the data supposed to be removed.
-
-2. **Orthogonal Unlearning and Replay**  
-   A approximate unlearning strategy to more effectively “forget” targeted data, aiming to mitigate privacy risks in approximate unlearning algorithms.
+This repository provides the official PyTorch implementation of **RBA (Relearning Behavior Alignment)**, a dynamic evaluation and auditing framework for class-level machine unlearning.
 
 ---
 
-## Table of Contents
-- [Environment Setup](#environment-setup)
-- [Quick Start](#quick-start)
-  - [1) Pretraining](#1-pretraining)
-  - [2) Perform Approximate Learning](#2-perform-approximate-learning)
-    - [Class-wise Unlearning](#class-wise-unlearning)
-    - [Sample-wise Unlearning](#sample-wise-unlearning)
-- [Reminiscence Attack (ReA)](#reminiscence-attack-rea)
-  - [Class-wise ReA](#class-wise-rea)
-  - [Sample-wise ReA](#sample-wise-rea)
-- [Membership Inference Attack (MIA) with LIRA](#membership-inference-attack-mia-with-lira)
+## 🚀 Getting Started
 
----
-## ! Project Update Notice
+### 1. Installation
 
-**Active Development Notice:** The folder ./celeba_sd updates an implementation of a **text-to-image diffusion model**.
-
-## Environment Setup
-
-1. **Python Version:** Use Python 3.8+ (or higher) for better compatibility.
-2. **Dependencies:** Install required packages with:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Quick Start
-
-### 1) Pretraining
-Before testing approximate unlearning, you need a normally trained (or pretrained) model. We provide two types of pretraining:
-
-Class-wise Pretraining
+Clone the repository and install the required dependencies:
 
 ```bash
-python pretrain_model_class_wise.py --dataset Cifar20 --net ViT --classes 15
+git clone https://github.com/Fadeaway4/RBA.git
+cd RBA
+pip install -r requirements.txt
 ```
-
-Trains a model with only certain classes for subsequent “forgetting” of specific classes.
-
-Sample-wise Pretraining
-
-```bash
-python pretrain_model_sample_wise.py --dataset Cifar10 --net ResNet18 --classes 10
-```
-Trains a model with all classes but allows for the forgetting of specific samples.
 
 ---
 
-### 2) Perform Approximate Learning
+## 📖 Workflow Overview
 
-After pretraining, you can run one of the two main scripts below, depending on whether you want class-wise or sample-wise unlearning.
+The overall pipeline consists of three stages:
 
-#### Class-wise Unlearning
+1. **Pretraining**  
+   Train a target model on benchmark datasets such as CIFAR10, CIFAR20, and CIFAR100.
 
-- **Main Script:** `run_class_wise.py`
+2. **Class-level Unlearning**  
+   Apply different approximate unlearning methods to remove the influence of a target class.
 
-This script typically involves the following steps:
+3. **RBA Evaluation**  
+   Perform dynamic relearning-based evaluation to analyze residual forgetting behaviors and privacy leakage.
 
-1. **Saliency Mask Generation (optional)** if the unlearning method (e.g., `salun`) requires it.  
-2. **Approximate Unlearning** using different methods (`baseline`, `retrain`, `finetune`, `negative_grad`, `amnesiac`, `Wfisher`, `boundary_shrink`, `scrub`, `FT_prune`, `salun`, `fsron`, `rum`, `orthogonality`, etc.).  
-3. **Reminiscence Attack** to evaluate how much private information remains after unlearning.
+> Please refer to the scripts in the root directory for detailed configurations and command-line arguments.
 
-A simplified example:
+---
+
+# 1️⃣ Pretraining
+
+Train the target model before performing unlearning experiments.
+
+## Example
+
 ```bash
-python run_class_wise.py
+python pretrain_model_class_wise.py \
+    --dataset Cifar20 \
+    --net resnet18 \
+    --classes 20
 ```
-Key code sections:
+
+---
+
+# 2️⃣ Class-level Machine Unlearning
+
+
+
+### Step 1. Saliency Mask Generation (Optional)
+
+Some methods (e.g., `salun`) require a saliency mask before unlearning.
+
 ```python
-# 1. Generate Saliency Mask
 python_file = 'saliency_mu/generate_mask_fullclass.py'
+
 subprocess.call([
     "python", python_file,
     '--net', net,
@@ -92,9 +72,26 @@ subprocess.call([
     '--save_dir', salun_save_path,
     '--seed', seed
 ])
+```
 
-# 2. Perform approximate unlearning
+---
+
+### Step 2. Approximate Unlearning
+
+Run different class-level unlearning baselines:
+
+- `baseline`
+- `retrain`
+- `bad_t`
+- `salun`
+- `amnesiac`
+- `L_codec`
+- `unrolling`
+- `scrub`
+
+```python
 python_file = "forget_full_class_main.py"
+
 for mu_method, para1, para2 in mu_method_list:
     subprocess.call([
         "python", python_file,
@@ -110,9 +107,17 @@ for mu_method, para1, para2 in mu_method_list:
         '-seed', seed,
         '--mask_path', salun_save_path + '/with_0.5.pt'
     ])
+```
 
-# 3. Reminiscence Attack (ReA)
-python_file = 'rea.py'
+---
+
+### Step 3. RBA Evaluation
+
+Evaluate residual forgetting behaviors using the proposed RBA framework.
+
+```python
+python_file = 'rba.py'
+
 for mu_method, para1, para2 in mu_method_list:
     subprocess.call([
         "python", python_file,
@@ -125,128 +130,37 @@ for mu_method, para1, para2 in mu_method_list:
         '--forget_class', forget_class,
         '-weight_path', masked,
         '-seed', seed,
-        '-mia_mu_method', 'rea',
         '--para1', para1,
         '--para2', para2
     ])
 ```
 
-#### Sample-wise Unlearning
+---
 
-- **Main Script:** `run_sample_wise.py`
+## 📊 Supported Datasets
 
-Similar to the class-wise script, but focuses on forgetting individual samples:
-
-1. **Saliency Mask Generation** (optional).  
-2. **Approximate Unlearning** methods such as `finetune`, `negative_grad`, `relabel`, `Wfisher`, `FisherForgetting`, `scrub`, `FT_prune`, `salun`, `sfron`, `rum`, `orthogonality`, etc.  
-3. **Reminiscence Attack** for sample-wise scenarios.
-
-A simplified example:
-```bash
-python run_sample_wise.py
-```
-Key code sections:
-```python
-# 1. Generate Saliency Mask
-python_file = 'saliency_mu/generate_mask.py'
-subprocess.call([
-    "python", python_file,
-    '--net', net,
-    '--dataset', dataset,
-    '--classes', n_classes,
-    '--mask', weight_path,
-    '--save_dir', salun_save_path,
-    '--seed', seed
-])
-
-# 2. Perform approximate unlearning
-python_file = "forget_sample_main.py"
-for mu_method, para1, para2 in mu_method_list:
-    subprocess.call([
-        "python", python_file,
-        '-net', net,
-        '-dataset', dataset,
-        '-classes', n_classes,
-        '-method', mu_method,
-        '-weight_path', weight_path,
-        '--para1', para1,
-        '--para2', para2,
-        '-seed', seed,
-        '--mask_path', config.CHECKPOINT_PATH + f'{salun_save_path}/with_0.5.pt'
-    ])
-```
+- CIFAR10
+- CIFAR20
+- CIFAR100
 
 ---
 
-## Reminiscence Attack (ReA)
+## 🧩 Supported Unlearning Methods
 
-### Class-wise ReA
-In `run_class_wise.py`, we run `rea.py` to test how effectively a class was “forgotten.” The attack method attempts to detect whether the model retains class-specific information.
+The framework currently supports the following class-level machine unlearning baselines:
 
-### Sample-wise ReA
-In `run_sample_wise.py`, we run `rea_reminiscence_random.py` + `mia_lira.py` to evaluate whether individual samples leave identifiable traces in the model.
+| Methods |`retrain` ， `salun`, `bad_t` ， `amnesiac`, `L_codec` ， `unrolling`, `scrub` |
 
 ---
 
-## Membership Inference Attack (MIA) with LIRA
+## 📌 Notes
 
-We also provide an optional **Membership Inference Attack** using **LIRA** to further assess privacy risks.
-
-1. **Reminiscence Attack (ReA) for sample-wise**
-```bash
-  python_file = "rea_reminiscence_random.py"
-  for mu_method, para1, para2 in mu_method_list:
-      subprocess.call([
-          "python", python_file,
-          '-net', net,
-          '-dataset', dataset,
-          '-classes', n_classes,
-          '-method', mu_method,
-          '-weight_path', weight_path,
-          '--para1', para1,
-          '--para2', para2,
-          '-seed', seed
-      ])
-```
-
-2.  **Shadow Model Training** (`train.py`):
-   ```bash
-   python train.py \
-       --name <model_name> \
-       --dataset <dataset_name> \
-       --save_name <save_name> \
-       --classes <n_classes> \
-       --net <net_name> \
-       --opt <opt_method> \
-       --bs 128 \
-       --lr <learning_rate> \
-       --pkeep 0.83 \
-       --num_shadow 8 \
-       --shadow_id <id>
-   ```
-
-3. **MIA with LIRA** (`mia_lira.py`):
-   ```bash
-   python mia_lira.py \
-       --net <net_name> \
-       --dataset <dataset_name> \
-       --classes <n_classes> \
-       --name <model_name> \
-       --save_name <save_name> \
-       --num_shadow 8 \
-       --num_aug 10 \
-       --machine_unlearning <mu_method> \
-       --para1 <para1> \
-       --para2 <para2> \
-       -task rea \
-       --weight_path <path_to_pretrained_model> \
-       --start 40000 \
-       --end 60000
-   ```
-Use `-task mia_lira` if you wish to run mia_lira only in the same evaluation pipeline.
+- Different methods may require different hyperparameter settings.
+- For `salun`, the saliency mask must be generated before unlearning.
+- Experimental configurations can be modified directly in the corresponding scripts.
 
 ---
 
+## 🙏 Acknowledgements
 
-
-
+Our implementation is built upon and inspired by the repository **orthogonalunlearning-replay/OUR**. We sincerely thank the authors for their valuable contribution to the machine unlearning community, which provided an important foundation for this work.

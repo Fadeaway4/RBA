@@ -99,42 +99,56 @@ def get_classwise_ds(ds, num_classes):
         classwise_ds[clabel].append((img, label, clabel))
     return classwise_ds
 
-# Returns metrics
+
 def get_metric_scores(
     model,
     unlearning_teacher,
     retain_train_dl,
     retain_valid_dl,
     forget_train_dl,
-    forget_valid_dl,  # <--- 必须传入这个专门的 DataLoader
+    forget_valid_dl,
     valid_dl,
     device,
-    fast=False
 ):
     model.eval()
-    
+
     loss_acc_dict = evaluate(model, retain_valid_dl, device)
     d_f_acc_dict = evaluate(model, forget_train_dl, device)
     retain_acc_dict = evaluate(model, retain_train_dl, device)
 
-    if fast:
-        mia_acc, mia_auc = 0.5, 0.5
-    else:
-        
-        mia_acc, mia_auc = get_membership_attack_prob_strategy_b(
-            forget_train_dl,
-            forget_valid_dl,
-            model
-        )
-
     return (
         loss_acc_dict["Acc"],
         d_f_acc_dict["Acc"],
-        retain_acc_dict["Acc"],
-        mia_acc,
-        mia_auc
+        retain_acc_dict["Acc"]
     )
 # Does nothing; original model
+
+
+
+class LabelReassignDataset(torch.utils.data.Dataset):
+    def __init__(self, subset, forget_class):
+        self.subset = subset
+        self.forget_class = forget_class
+
+    def __getitem__(self, index):
+        
+        x, y, cy = self.subset[index]
+
+        
+        new_cy = cy - 1 if cy > self.forget_class else cy
+
+        
+        return x, y, new_cy
+
+    def __len__(self):
+        return len(self.subset)
+
+
+
+    
+
+
+
 def baseline(
     model,
     unlearning_teacher,
@@ -160,41 +174,6 @@ def baseline(
         valid_dl,
         device,
     ), time_elapsed
-
-
-class LabelReassignDataset(torch.utils.data.Dataset):
-    def __init__(self, subset, forget_class):
-        self.subset = subset
-        self.forget_class = forget_class
-
-    def __getitem__(self, index):
-        
-        x, y, cy = self.subset[index]
-
-        
-        new_cy = cy - 1 if cy > self.forget_class else cy
-
-        
-        return x, y, new_cy
-
-    def __len__(self):
-        return len(self.subset)
-
-
-
-
-
-
-
-
-
-
-
-
-import time
-import torch
-import torch.nn as nn
-import torch.optim as optim
 
 def salun(model,
           unlearning_teacher,
@@ -290,7 +269,7 @@ def salun(model,
         torch.save(model.state_dict(), weights_path)
 
         
-        d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
+        d_t, d_f, d_r = get_metric_scores(
             model, 
             unlearning_teacher, 
             retain_train_dl, 
@@ -299,15 +278,14 @@ def salun(model,
             forget_valid_dl, 
             valid_dl, 
             device=device, 
-            fast=True
-        )
+            )
 
         print("[Final]")
-        print(f"d_t = {d_t} | d_f = {d_f} | d_r = {d_r} | mia_acc = {mia_acc} | mia_auc = {mia_auc}")
+        print(f"d_t = {d_t} | d_f = {d_f} | d_r = {d_r} ")
         
         time_elapsed = time.time() - start_time
 
-        return (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
+        return (d_t, d_f, d_r), time_elapsed
     else:
         return model
 
@@ -338,15 +316,22 @@ def retrain(
     device,
     num_classes,
     weights_path,
-    para1='0.0003',
-    para2='150',
+    para1='0.1',
+    para2='200',
+    rum=False,
     **kwargs,
 ):
     import time
     import torch
     import torch.nn as nn
+    import torch.optim as optim
+    import torchvision.transforms as T
+    import models.models_factory as models_factory
+    from utils.training_utils import WarmUpLR
 
-    start = time.time()
+    start_total_time = time.time()
+    lr = float(para1)
+    epochs = int(para2)
 
     model = getattr(models_factory, model_name)(num_classes=num_classes)
     if torch.cuda.device_count() > 1:
@@ -354,56 +339,116 @@ def retrain(
         model = nn.DataParallel(model)
     model.cuda()
 
-    def weight_reset(m):
-        if hasattr(m, "reset_parameters"):
-            m.reset_parameters()
-
-    model.apply(weight_reset)
-
     if model_name == "ViT":
-        milestones = getattr(config, f"{dataset_name}_{model_name}_MILESTONES")
+        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     else:
-        milestones = getattr(config, f"{dataset_name}_MILESTONES")
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
 
-    _ = fit_one_cycle(
-        int(para2),
-        model,
-        retain_train_dl,
-        retain_valid_dl,
-        lr=float(para1),
-        milestones=milestones,
-        device=device,
-        model_name=model_name,
+    iter_per_epoch = len(retain_train_dl)
+    warmup_epochs = 5
+    warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch * warmup_epochs)
+
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=epochs,
+        eta_min=1e-6
     )
 
+    loss_function = nn.CrossEntropyLoss().cuda()
 
-    d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
-        model,
-        unlearning_teacher,
-        retain_train_dl,
-        retain_valid_dl,
-        forget_train_dl,
-        forget_valid_dl,
-        valid_dl,
-        device=device,
-        fast=False
+    gpu_transform = T.Compose([
+        T.RandomCrop(32, padding=4, fill=0),
+        T.RandomHorizontalFlip(p=0.5)
+    ])
+
+    
+    print("--------------------------------------------------------------------------------")
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        epoch_start_time = time.time()
+
+        train_losses = AverageMeter()
+        train_top1 = AverageMeter()
+
+        for batch_idx, (images, _, labels) in enumerate(retain_train_dl):
+            images = images.cuda(non_blocking=True)
+            labels = labels.cuda(non_blocking=True)
+
+            images = gpu_transform(images)
+
+            optimizer.zero_grad(set_to_none=True)
+            outputs = model(images)
+            loss = loss_function(outputs, labels)
+            loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            optimizer.step()
+
+            if epoch <= warmup_epochs:
+                warmup_scheduler.step()
+
+            prec1 = accuracy(outputs.data, labels)[0]
+            train_losses.update(loss.item(), images.size(0))
+            train_top1.update(prec1.item(), images.size(0))
+
+        if epoch > warmup_epochs:
+            scheduler.step()
+
+        model.eval()
+        test_top1 = AverageMeter()
+
+        with torch.no_grad():
+            for images, _, labels in valid_dl:
+                images = images.cuda(non_blocking=True)
+                labels = labels.cuda(non_blocking=True)
+
+                outputs = model(images)
+                prec1 = accuracy(outputs.data, labels)[0]
+                test_top1.update(prec1.item(), images.size(0))
+
+        current_lr = optimizer.param_groups[0]['lr']
+        epoch_time = time.time() - epoch_start_time
+
+        print(
+            f"Epoch [{epoch:3d}/{epochs}] | "
+            f"Train Loss: {train_losses.avg:.4f} | "
+            f"RA (Train Acc): {train_top1.avg:.2f}% | "
+            f"TA (Test Acc): {test_top1.avg:.2f}% | "
+            f"LR: {current_lr:.6f} | "
+            f"Time: {epoch_time:.2f}s"
+        )
+
+    print("--------------------------------------------------------------------------------")
+    
+
+    if not rum:
+        torch.save(model.state_dict(), weights_path)
+
+        d_t, d_f, d_r = get_metric_scores(
+            model,
+            unlearning_teacher,
+            retain_train_dl,
+            retain_valid_dl,
+            forget_train_dl,
+            forget_valid_dl,
+            valid_dl,
+            device=device,
+        
     )
 
-    print("[Final]")
-    print(
+        print("[Final]")
+        print(
         "d_t =", d_t,
         "| d_f =", d_f,
-        "| d_r =", d_r,
-        "| mia_acc =", mia_acc,
-        "| mia_auc =", mia_auc
+        "| d_r =", d_r
     )
 
-
-    torch.save(model.state_dict(), weights_path)
-
-    time_elapsed = time.time() - start
-
-    return (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
+        
+        time_elapsed = time.time() - start_total_time
+        return (d_t, d_f, d_r), time_elapsed
+    else:
+        return model
 
 # Implementation from https://github.com/vikram2000b/bad-teaching-unlearning
 def amnesiac(
@@ -454,7 +499,7 @@ def amnesiac(
     )
 
 
-    d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
+    d_t, d_f, d_r = get_metric_scores(
         model,
         unlearning_teacher,
         retain_train_dl,
@@ -463,19 +508,18 @@ def amnesiac(
         forget_valid_dl,
         valid_dl,
         device=device,
-        fast=False
+        
     )
 
     print("[Final]")
-    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r,
-          "| mia_acc =", mia_acc, "| mia_auc =", mia_auc)
+    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r)
 
 
     torch.save(model.state_dict(), weights_path)
 
     time_elapsed = time.time() - start
 
-    return (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
+    return (d_t, d_f, d_r), time_elapsed
 
 def scrub(
     model,
@@ -609,7 +653,7 @@ def scrub(
     model = copy.deepcopy(model_s)
 
 
-    d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
+    d_t, d_f, d_r = get_metric_scores(
         model,
         unlearning_teacher,
         retain_train_dl,
@@ -618,16 +662,14 @@ def scrub(
         forget_valid_dl,
         valid_dl,
         device=device,
-        fast=False
+        
     )
 
     print("[Final]")
     print(
         "d_t =", d_t,
         "| d_f =", d_f,
-        "| d_r =", d_r,
-        "| mia_acc =", mia_acc,
-        "| mia_auc =", mia_auc
+        "| d_r =", d_r
     )
 
     
@@ -635,7 +677,7 @@ def scrub(
 
     time_elapsed = time.time() - start_time
 
-    return (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
+    return (d_t, d_f, d_r), time_elapsed
 
 
 
@@ -709,7 +751,7 @@ def unrolling(
             optimizer.step()
 
 
-    d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
+    d_t, d_f, d_r = get_metric_scores(
         model,
         unlearning_teacher,
         retain_train_dl,
@@ -718,26 +760,29 @@ def unrolling(
         forget_valid_dl,
         valid_dl,
         device=device,
-        fast=False
+        
     )
 
     print("[Final]")
-    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r,
-          "| mia_acc =", mia_acc, "| mia_auc =", mia_auc)
+    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r)
 
     torch.save(model.state_dict(), weights_path)
 
     time_elapsed = time.time() - start
 
-    return (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
+    return (d_t, d_f, d_r), time_elapsed
 
 
 
 
 
+import time
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 
-#####################
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 
@@ -832,7 +877,7 @@ def l1_regularization(model):
 
 
 
-########
+
 from torch.autograd import grad
 def get_x_y_from_data_dict(data, device):
     x, y = data.values()
@@ -981,7 +1026,7 @@ def bad_t(
             labels_f = torch.ones(img_f.size(0)).to(device)
             labels = torch.cat((labels_r, labels_f), dim=0).unsqueeze(1)
 
-           
+            
             with torch.no_grad():
                 full_teacher_logits = full_trained_teacher(images)
                 unlearn_teacher_logits = unlearning_teacher(images)
@@ -1010,11 +1055,11 @@ def bad_t(
     end = time.time()
     time_elapsed = end - start
 
-    
+
     torch.save(model.state_dict(), weights_path)
 
-    
-    d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
+
+    d_t, d_f, d_r = get_metric_scores(
         model,
         unlearning_teacher,
         retain_train_dl,
@@ -1023,14 +1068,13 @@ def bad_t(
         forget_valid_dl,
         valid_dl,
         device=device,
-        fast=False
+        
     )
 
     print("[Final]")
-    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r,
-          "| mia_acc =", mia_acc, "| mia_auc =", mia_auc)
+    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r)
 
-    return (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
+    return (d_t, d_f, d_r), time_elapsed
 
 
 
@@ -1046,8 +1090,8 @@ def l_codec_unlearn(
         valid_dl,
         device,
         weights_path=None,
-        para1='0.1',  # L-CODEC 阈值或系数
-        para2='1',    # 微调轮数
+        para1='0.1',  
+        para2='1',    
         model_name=None,
         **kwargs,
 ):
@@ -1111,7 +1155,7 @@ def l_codec_unlearn(
                     break
 
 
-    d_t, d_f, d_r, mia_acc, mia_auc = get_metric_scores(
+    d_t, d_f, d_r = get_metric_scores(
         model,
         unlearning_teacher,
         retain_train_dl,
@@ -1120,16 +1164,15 @@ def l_codec_unlearn(
         forget_valid_dl,
         valid_dl,
         device=device,
-        fast=False
+        
     )
 
     print("[Final] L-CODEC")
-    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r,
-          "| mia_acc =", mia_acc, "| mia_auc =", mia_auc)
+    print("d_t =", d_t, "| d_f =", d_f, "| d_r =", d_r)
 
 
     if weights_path:
         torch.save(model.state_dict(), weights_path)
 
     time_elapsed = time.time() - start
-    return (d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed
+    return (d_t, d_f, d_r), time_elapsed

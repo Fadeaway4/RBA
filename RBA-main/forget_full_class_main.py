@@ -69,8 +69,8 @@ parser.add_argument(
     choices=["Cifar10", "Cifar20", "Cifar100", "PinsFaceRecognition"],
     help="dataset to train on",
 )
-parser.add_argument("-classes", type=int, default=15, help="number of classes")
-parser.add_argument("-num_classes", type=int, default=20, help="number of classes")
+parser.add_argument("-classes", type=int,  help="number of classes")
+parser.add_argument("-num_classes", type=int,  help="number of classes")
 parser.add_argument("-gpu", default=True, help="use gpu or not")
 parser.add_argument("-b", type=int, default=64, help="batch size for dataloader")
 parser.add_argument("-warm", type=int, default=1, help="warm up training phase")
@@ -138,32 +138,32 @@ batch_size = args.b
 
 net = getattr(models_factory, args.net)(num_classes=args.num_classes)
 
-# 加载预训练权重
-state_dict = torch.load(args.weight_path, map_location='cuda')  # 如果用 CPU 可以改 'cpu'
 
-# 先创建模型
+state_dict = torch.load(args.weight_path, map_location='cuda')  
+
+
 net = getattr(models_factory, args.net)(num_classes=args.num_classes)
 
-# 加载权重
-state_dict = torch.load(args.weight_path, map_location='cuda')  # CPU改 'cpu'
+
+state_dict = torch.load(args.weight_path, map_location='cuda')  
 
 from collections import OrderedDict
 new_state_dict = OrderedDict()
 
-# 如果你使用 DataParallel，多 GPU，需要加上 module. 前缀
+
 if torch.cuda.device_count() > 1:
     print(f"Let's use {torch.cuda.device_count()} GPUs!")
     for k, v in state_dict.items():
-        new_key = 'module.' + k  # 加 module 前缀
+        new_key = 'module.' + k  
         new_state_dict[new_key] = v
     net = nn.DataParallel(net)
 else:
-    new_state_dict = state_dict  # 单 GPU，直接用原 state_dict
+    new_state_dict = state_dict  
 
-# 加载权重
+
 net.load_state_dict(new_state_dict)
 
-# 放到 GPU
+
 if args.gpu:
     net = net.cuda()
 
@@ -278,19 +278,17 @@ if args.method == "rum":
 
 # Time the method
 import time
-print("forget_full_class_main_cifar15")
-# executes the method passed via args
-(d_t, d_f, d_r, mia_acc, mia_auc), time_elapsed = getattr(forget_full_class_strategies, args.method)(**kwargs)
 
-print("d_t = ", d_t,  "| d_f = ", d_f, "| d_r = ", d_r, "| mia_acc = ", mia_acc,"| mia_auc = ", mia_auc, "| time = ", time_elapsed)
+# executes the method passed via args
+(d_t, d_f, d_r), time_elapsed = getattr(forget_full_class_strategies, args.method)(**kwargs)
+
+print("d_t = ", d_t,  "| d_f = ", d_f, "| d_r = ", d_r, "| time = ", time_elapsed)
 
 logname = os.path.join(checkpoint_path, 'log.tsv')
 with open(logname, 'w+') as f:
     columns = ['d_t',
                'd_f',
                'd_r',
-               'mia_acc',
-               'mia_auc',
                'time'
                ]
     f.write('\t'.join(columns) + '\n')
@@ -299,8 +297,6 @@ with open(logname, 'a') as f:
     columns = [f"{d_t}",
                f"{d_f}",
                f"{d_r}",
-               f"{mia_acc}",
-               f"{mia_auc}",
                f"{time_elapsed}"
                ]
     f.write('\t'.join(columns) + '\n')

@@ -12,20 +12,10 @@ from utils.training_utils import *
 import numpy as np
 
 def construct_forget_memorization(forget_dataset_index, npz_path):
-    """
-    根据 forget_dataset_index 选取 base_dataset 中的样本，并从 npz_path 文件中提取相应的 mem 数值，
-    构造一个包含 (image, label, mem) 的新数据集返回。
-
-    :param base_dataset: 原始的 forget_dataset（例如 CIFAR-10 数据集的一部分）
-    :param forget_dataset_index: 一个索引列表，指明哪些样本需要被“遗忘”
-    :param npz_path: npz 文件的路径，此文件中存有键 'mem'，对应所有样本的 memorization 数值
-    :return: 一个 MemorizationDataset 类型的数据集
-    """
-    # 加载 npz 数据
+    
     npz_data = np.load(npz_path)
-    mem_all = npz_data['mem']  # 假定 mem_all 的顺序与合并数据集顺序一致
-    # 按给定的索引顺序提取需要的 memorization 数值
-    # 注意：如果 forget_dataset_index 是列表或 numpy 数组，下面这样取值即可
+    mem_all = npz_data['mem']  
+    
     mem_forget = mem_all[forget_dataset_index]
     return mem_forget
 
@@ -90,9 +80,7 @@ def get_lr(optimizer):
 
 @torch.no_grad()
 def eval_training(epoch, net, testloader, tb=True):
-    """
-    在测试集上评估模型性能，输出准确率和平均损失
-    """
+    
     loss_function = nn.CrossEntropyLoss()
     net.eval()
 
@@ -220,14 +208,14 @@ def get_classwise_ds(ds, num_classes):
     for sample in ds:
         if len(sample) == 2:
             img, label = sample
-            clabel = label   # clabel 就设成 label
+            clabel = label   
         elif len(sample) == 3:
             img, label, clabel = sample
         else:
-            raise ValueError(f"Dataset sample format错误: {sample}")
+            raise ValueError(f"Incorrect Dataset Sample Format: {sample}")
 
         if clabel not in classwise_ds:
-            raise KeyError(f"clabel={clabel} 超出范围 0~{num_classes-1}")
+            raise KeyError(f"clabel={clabel} Out of range 0~{num_classes-1}")
 
         classwise_ds[clabel].append((img, label, clabel))
 

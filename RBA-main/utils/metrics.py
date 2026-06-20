@@ -83,13 +83,10 @@ from sklearn.metrics import roc_auc_score, accuracy_score
 from sklearn.model_selection import train_test_split
 
 def get_membership_attack_prob_strategy_b(forget_train_loader, forget_test_loader, model):
-    """
-    策略 B：严格成员推断攻击
-    只区分：遗忘类的训练集 (Member) vs 遗忘类的测试集 (Non-member)
-    """
+   
+    
     model.eval()
-    # 1. 收集熵特征
-    # 注意：这里的 forget_test_loader 必须只包含遗忘类的测试数据
+    
     forget_train_prob = collect_prob(forget_train_loader, model)
     forget_test_prob = collect_prob(forget_test_loader, model)
 
@@ -102,22 +99,22 @@ def get_membership_attack_prob_strategy_b(forget_train_loader, forget_test_loade
     X = np.concatenate([X_member, X_nonmember])
     Y = np.concatenate([Y_member, Y_nonmember])
 
-    # 2. 划分攻击模型的训练集和测试集 (4:6 划分)
+    
     try:
         X_train, X_test, y_train, y_test = train_test_split(
             X, Y, test_size=0.6, random_state=42, stratify=Y
         )
     except ValueError:
-        # 处理样本量极少的情况
+        
         X_train, X_test, y_train, y_test = train_test_split(
             X, Y, test_size=0.5, random_state=42
         )
 
-    # 3. 训练攻击者
+    
     clf = LogisticRegression(class_weight="balanced")
     clf.fit(X_train, y_train)
 
-    # 4. 评估指标
+    
     y_pred = clf.predict(X_test)
     y_prob = clf.predict_proba(X_test)[:, 1]
 

@@ -13,15 +13,12 @@ import numpy as np
 
 class MemorizationDataset(Dataset):
     def __init__(self, base_dataset, mem_values):
-        """
-        :param base_dataset: 原始数据集（例如返回 (image, label)）
-        :param mem_values: 与 base_dataset 中样本一一对应的 memorization 值（数组或 list）
-        """
+       
         self.base_dataset = base_dataset
         self.mem_values = mem_values
 
     def __getitem__(self, index):
-        # 从基础数据集中取样本，同时附加该样本的 memorization 数值
+        
         img, _, label = self.base_dataset[index]
         mem = self.mem_values[index]
         return img, label, mem
@@ -30,65 +27,36 @@ class MemorizationDataset(Dataset):
         return len(self.base_dataset)
 
 def construct_forget_dataset(base_dataset, forget_dataset_index, npz_path):
-    """
-    根据 forget_dataset_index 选取 base_dataset 中的样本，并从 npz_path 文件中提取相应的 mem 数值，
-    构造一个包含 (image, label, mem) 的新数据集返回。
-
-    :param base_dataset: 原始的 forget_dataset（例如 CIFAR-10 数据集的一部分）
-    :param forget_dataset_index: 一个索引列表，指明哪些样本需要被“遗忘”
-    :param npz_path: npz 文件的路径，此文件中存有键 'mem'，对应所有样本的 memorization 数值
-    :return: 一个 MemorizationDataset 类型的数据集
-    """
-    # 加载 npz 数据
+    
+    
     npz_data = np.load(npz_path)
-    mem_all = npz_data['mem']  # 假定 mem_all 的顺序与合并数据集顺序一致
-    # 按给定的索引顺序提取需要的 memorization 数值
-    # 注意：如果 forget_dataset_index 是列表或 numpy 数组，下面这样取值即可
+    mem_all = npz_data['mem']  
+   
     mem_forget = mem_all[forget_dataset_index]
 
-    # 利用 Subset 选取对应的样本
+    
     subset_forget = Subset(base_dataset, forget_dataset_index)
-    # 构造包装数据集，使得 __getitem__ 返回 (img, label, mem)
+    
     new_forget_dataset = MemorizationDataset(subset_forget, mem_forget)
     return new_forget_dataset
 
 def construct_valid_dataset(base_dataset, valid_index_in_mem, npz_path):
-    """
-    根据 forget_dataset_index 选取 base_dataset 中的样本，并从 npz_path 文件中提取相应的 mem 数值，
-    构造一个包含 (image, label, mem) 的新数据集返回。
-
-    :param base_dataset: 原始的 forget_dataset（例如 CIFAR-10 数据集的一部分）
-    :param forget_dataset_index: 一个索引列表，指明哪些样本需要被“遗忘”
-    :param npz_path: npz 文件的路径，此文件中存有键 'mem'，对应所有样本的 memorization 数值
-    :return: 一个 MemorizationDataset 类型的数据集
-    """
-    # 加载 npz 数据
+    
     npz_data = np.load(npz_path)
-    mem_all = npz_data['mem']  # 假定 mem_all 的顺序与合并数据集顺序一致
-    # 按给定的索引顺序提取需要的 memorization 数值
-    # 注意：如果 forget_dataset_index 是列表或 numpy 数组，下面这样取值即可
+    mem_all = npz_data['mem']  
+    
     mem_forget = mem_all[valid_index_in_mem]
 
-    # 利用 Subset 选取对应的样本
-    # 构造包装数据集，使得 __getitem__ 返回 (img, label, mem)
+    
     new_valid_dataset = MemorizationDataset(base_dataset, mem_forget)
     return new_valid_dataset
 
 def construct_forget_memorization(forget_dataset_index, npz_path):
-    """
-    根据 forget_dataset_index 选取 base_dataset 中的样本，并从 npz_path 文件中提取相应的 mem 数值，
-    构造一个包含 (image, label, mem) 的新数据集返回。
-
-    :param base_dataset: 原始的 forget_dataset（例如 CIFAR-10 数据集的一部分）
-    :param forget_dataset_index: 一个索引列表，指明哪些样本需要被“遗忘”
-    :param npz_path: npz 文件的路径，此文件中存有键 'mem'，对应所有样本的 memorization 数值
-    :return: 一个 MemorizationDataset 类型的数据集
-    """
-    # 加载 npz 数据
+   
+    
     npz_data = np.load(npz_path)
-    mem_all = npz_data['mem']  # 假定 mem_all 的顺序与合并数据集顺序一致
-    # 按给定的索引顺序提取需要的 memorization 数值
-    # 注意：如果 forget_dataset_index 是列表或 numpy 数组，下面这样取值即可
+    mem_all = npz_data['mem']  
+    
     mem_forget = mem_all[forget_dataset_index]
     return mem_forget
 
@@ -248,40 +216,28 @@ def read_csv_file(file_path):
 
 def build_retain_sets_in_unlearning(classwise_train, classwise_test,
                                     num_classes, forget_class, ood_class=None):
-    """
-    构建 unlearning 中的 retain_train / retain_valid 数据集。
-    classwise_train / test 为长度 num_classes 的 list，每个元素是该类的数据集。
-
-    修复内容：
-    1. 修复原项目 bug：retain_class 中 forget_class 找不到导致 assert 触发
-    2. 去掉错误的 index 取值逻辑（源代码写了一半 “!=index_of_forget...”）
-    3. 明确 retain = all_classes - forget_class
-    4. 清晰返回 retain_train / retain_valid 两个 list（按 class ID 作为下标）
-    """
-
-    # ---- Step 1: 获取类别全集 ----
+    
     all_class = list(range(num_classes))
 
-    # ---- Step 2：去除 ood_class（如果存在）----
+    
     if ood_class is not None:
         retain_class = list(set(all_class) - set(ood_class))
     else:
         retain_class = list(all_class)
 
-    # ---- Step 3：确保 forget_class 必定参与 retain_class 计算 ----
+    
     if forget_class not in retain_class:
-        # 如果由于 ood_class 避免，把它加入回来，否则原始断言会失败
+        
         retain_class.append(forget_class)
         retain_class = sorted(list(set(retain_class)))
 
-    # ---- Step 4：assert 修复 ----
+    
     assert 0 <= forget_class < num_classes, "forget_class out of range"
 
-    # ---- Step 5：范畴错误修复 ----
-    # 正确逻辑：retain class = retain_class 去掉 forget_class
+    
     real_retain_classes = [c for c in retain_class if c != forget_class]
 
-    # ---- Step 6：收集保留的训练 & 验证数据 ----
+    
     retain_train = []
     retain_valid = []
 

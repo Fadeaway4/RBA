@@ -10,7 +10,7 @@ CHECKPOINT_PATH = "log_files/model"
 
 forget_class = [0]
 cifar10_ood_classes = [ 8, 9]
-ood_classes = [15, 16, 17, 18, 19]#np.random.choice(np.setdiff1d(np.arange(0, 19), forget_class), 5, replace=False)
+ood_classes = [15,16,17,18, 19]#np.random.choice(np.setdiff1d(np.arange(0, 19), forget_class), 5, replace=False)
 # ood_classes_gtsrb = [9, 10, 11] #the first batch
 ood_classes_gtsrb = [40, 9, 11]# the second batch
 

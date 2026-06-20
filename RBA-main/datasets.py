@@ -45,6 +45,96 @@ transform_imagenet = transforms.Compose([
     transforms.ToTensor(),
 ])
 
+
+from torchvision import datasets as torchvision_datasets
+
+def get_dataset(data_name, path='./data'):
+    import torchvision.datasets as torchvision_datasets
+    from torchvision import transforms
+
+    data_name = data_name.lower()
+
+    
+    valid_sets = ['mnist', 'cifar10', 'cifar20', 'cifar100']
+    if data_name not in valid_sets:
+        raise ValueError(
+            f"Unknown dataset: {data_name}. "
+            f"Supported: {valid_sets}"
+        )
+
+    trainset, testset = None, None
+
+    
+    if data_name == 'mnist':
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
+
+        trainset = torchvision_datasets.MNIST(
+            path, train=True, download=True, transform=transform
+        )
+        testset = torchvision_datasets.MNIST(
+            path, train=False, download=True, transform=transform
+        )
+
+    
+    elif data_name == 'cifar10':
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5),
+                                 (0.5, 0.5, 0.5))
+        ])
+
+        trainset = torchvision_datasets.CIFAR10(
+            root=path, train=True, download=True, transform=transform
+        )
+        testset = torchvision_datasets.CIFAR10(
+            root=path, train=False, download=True, transform=transform
+        )
+
+   
+    elif data_name == 'cifar100':
+        cifar100_mean = (0.5071, 0.4865, 0.4409)
+        cifar100_std = (0.2673, 0.2564, 0.2761)
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(cifar100_mean, cifar100_std)
+        ])
+
+        trainset = torchvision_datasets.CIFAR100(
+            root=path, train=True, download=True, transform=transform
+        )
+        testset = torchvision_datasets.CIFAR100(
+            root=path, train=False, download=True, transform=transform
+        )
+
+    
+    elif data_name == 'cifar20':
+        from datasets import Cifar20  
+
+        trainset = Cifar20(
+            root=path,
+            train=True,
+            download=True,
+            unlearning=False
+        )
+        testset = Cifar20(
+            root=path,
+            train=False,
+            download=True,
+            unlearning=False
+        )
+
+    
+    if trainset is None or testset is None:
+        raise RuntimeError(
+            f"Dataset {data_name} was not properly initialized."
+        )
+
+    return trainset, testset
+# =====================================================================
 # www.kaggle.com/datasets/hereisburak/pins-face-recognition
 class PinsFaceRecognition(ImageFolder):
     def __init__(self, root, train, unlearning, download, img_size=32):
@@ -301,13 +391,13 @@ class Imagenet64(Dataset):
         self.load_data(root)
 
     def load_data(self, root):
-        # 加载所有批次文件
+        
         if self.train:
-            for i in range(1, 11):  # 从1到10
+            for i in range(1, 11):  
                 file_path = f"{root}/Imagenet64_train/train_data_batch_{i}"
                 with open(file_path, 'rb') as file:
                     batch_data = pickle.load(file, encoding='bytes')
-                # ImageNet64 数据通常是 N x 3072 的数组，需要重新塑形为 64x64x3
+                
                 images = batch_data['data'].reshape((-1, 3, 64, 64)).transpose((0, 2, 3, 1))
                 self.data.extend(images)
                 self.labels.extend(batch_data['labels'])
@@ -315,7 +405,7 @@ class Imagenet64(Dataset):
             file_path = f"{root}/Imagenet64_val/val_data"
             with open(file_path, 'rb') as file:
                 batch_data = pickle.load(file, encoding='bytes')
-            # ImageNet64 数据通常是 N x 3072 的数组，需要重新塑形为 64x64x3
+            
             images = batch_data['data'].reshape((-1, 3, 64, 64)).transpose((0, 2, 3, 1))
             self.data.extend(images)
             self.labels.extend(batch_data['labels'])
@@ -325,7 +415,7 @@ class Imagenet64(Dataset):
 
     def __getitem__(self, idx):
         img = self.data[idx]
-        label = self.labels[idx] - 1  # 标签调整为从0开始
+        label = self.labels[idx] - 1  
         img = Image.fromarray(img)
 
         if self.transform:

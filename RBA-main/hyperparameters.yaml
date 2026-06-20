@@ -1,0 +1,49 @@
+Cifar10:
+  amnesiac:
+    para1: 0.0001
+    para2: 3
+
+  l_codec_unlearn:
+    para1: 0.01
+    para2: 3
+
+  retrain:
+    para1: 0.1
+    para2: 80
+
+  salun:
+    para1: 0.0007
+    para2: 8
+
+  scrub:
+    para1: 0.00016
+    para2: 9
+
+  unrolling:
+    para1: 2.1e-5
+    para2: 0.01
+
+Cifar20:
+  amnesiac:
+    para1: 0.0001
+    para2: 3
+
+  l_codec_unlearn:
+    para1: 0.01
+    para2: 3
+
+  retrain:
+    para1: 0.1
+    para2: 80
+
+  salun:
+    para1: 0.0008
+    para2: 6
+
+  scrub:
+    para1: 0.0002
+    para2: 10
+
+  unrolling:
+    para1: 8e-5
+    para2: 0.1

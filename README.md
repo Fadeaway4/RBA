@@ -45,7 +45,10 @@ Train the target model before performing unlearning experiments.
 python pretrain_model_class_wise.py \
     --dataset Cifar20 \
     --net resnet18 \
-    --classes 20
+    --classes 20 \
+    --epochs 200 \
+    --batch_size: 256 \
+    --learning_rate: 0.1 
 ```
 
 ---
@@ -107,6 +110,8 @@ for mu_method, para1, para2 in mu_method_list:
         '-seed', seed,
         '--mask_path', salun_save_path + '/with_0.5.pt'
     ])
+
+    The hyperparameter settings for all evaluated unlearning methods are listed in hyperparameters.yaml.
 ```
 
 ---

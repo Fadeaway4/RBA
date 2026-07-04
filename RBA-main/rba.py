@@ -198,13 +198,13 @@ def compute_metrics(res):
     f_loss = np.array(res["forget_loss"])
     o_loss = np.array(res["ood_loss"])
 
-    # 🔴 ΔIP: average of first K steps
+    # 🔴 ΔIL: average of first K steps
     K = 5
 
     f_init = np.mean(f_loss[:K])
     o_init = np.mean(o_loss[:K])
 
-    deltaIP = float(abs(f_init - o_init))
+    deltaIL = float(abs(f_init - o_init))
 
     # CG
     CG = abs(res["ood_idx"] - res["forget_idx"])
@@ -217,7 +217,7 @@ def compute_metrics(res):
     )
 
     return {
-        "DeltaIP": deltaIP,
+        "DeltaIL": deltaIL,
         "CG": float(CG),
         "SBC": float(SBC)
     }
@@ -225,7 +225,7 @@ def compute_metrics(res):
 
 def strategy_score(m, strategy):
 
-    R_ip = min(m["DeltaIP"], 1.0)
+    R_il = min(m["DeltaIL"], 1.0)
     R_cg = min(m["CG"] / 50.0, 1.0)
     R_sbc = 1 - m["SBC"]
 
@@ -239,7 +239,7 @@ def strategy_score(m, strategy):
         w = (0.2, 0.3, 0.5)
 
     return (
-        w[0] * R_ip +
+        w[0] * R_il +
         w[1] * R_cg +
         w[2] * R_sbc
     )
